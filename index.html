@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<title>Discord Quick Send</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0e1620" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Quick Send" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/favicon.png" />
+<link rel="apple-touch-icon" href="icons/favicon.png" />
+<style>
+  :root {
+    --bg: #0e1620;
+    --panel: #16223a;
+    --panel-2: #1c2c4a;
+    --line: #2a3b52;
+    --text: #f2f6ff;
+    --text-dim: #9fb0d1;
+    --text-faint: #62729a;
+    --accent: #3fa6ff;
+    --good: #4fd8a4;
+    --bad: #ff7a68;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px 56px;
+  }
+
+  .wrap { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; }
+
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); font-size: 14px; margin: 0; line-height: 1.5; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .label { font-size: 13px; font-weight: 700; color: var(--text-dim); }
+
+  textarea, input[type="password"], input[type="text"] {
+    width: 100%;
+    font: inherit;
+    font-size: 15px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    resize: vertical;
+  }
+  textarea::placeholder, input::placeholder { color: var(--text-faint); }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  #message-input { min-height: 110px; }
+
+  .row { display: flex; gap: 8px; }
+
+  button {
+    flex: 1;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 11px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.secondary { color: var(--text-dim); flex: 0 0 auto; padding: 11px 16px; }
+  button.good-flash { color: var(--good); border-color: var(--good); }
+  button.bad-flash { color: var(--bad); border-color: var(--bad); }
+
+  .webhook-row { display: flex; gap: 8px; }
+  .webhook-row input { flex: 1; }
+
+  .status-line { font-size: 13px; min-height: 18px; }
+  .status-line.good { color: var(--good); }
+  .status-line.bad { color: var(--bad); }
+  .status-line.dim { color: var(--text-faint); }
+
+  .preview-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.03em; }
+  .preview-box {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 20px;
+  }
+</style>
+
+<div class="wrap">
+  <div>
+    <h1>Discord Quick Send</h1>
+    <p class="subtitle">Paste a message once, send it straight to your Discord webhook &mdash; wrapped the same way your PC/Mobile clipboard sync used.</p>
+  </div>
+
+  <div class="panel">
+    <div class="label">Discord Webhook URL</div>
+    <div class="webhook-row">
+      <input type="password" id="webhook-input" placeholder="https://discord.com/api/webhooks/..." autocomplete="off" />
+      <button class="secondary" id="webhook-toggle-btn" type="button">Show</button>
+    </div>
+    <div class="row">
+      <button id="webhook-save-btn" type="button">Save</button>
+      <button class="secondary" id="webhook-clear-btn" type="button">Clear</button>
+    </div>
+    <div class="status-line dim" id="webhook-status">Stored only in this browser (localStorage) &mdash; never leaves your device except straight to Discord.</div>
+  </div>
+
+  <div class="panel">
+    <div class="label">Message</div>
+    <textarea id="message-input" placeholder="Type or paste your message&hellip;"></textarea>
+    <div class="preview-label">Preview</div>
+    <div class="preview-box" id="preview-box">&mdash;</div>
+    <div class="row">
+      <button id="pc-send-btn" type="button">PC Send</button>
+      <button id="mobile-send-btn" type="button">Mobile Send</button>
+    </div>
+    <div class="status-line" id="send-status"></div>
+  </div>
+</div>
+
+<script>
+  const WEBHOOK_KEY = 'discord-quick-send-webhook';
+
+  const webhookInput = document.getElementById('webhook-input');
+  const webhookToggleBtn = document.getElementById('webhook-toggle-btn');
+  const webhookSaveBtn = document.getElementById('webhook-save-btn');
+  const webhookClearBtn = document.getElementById('webhook-clear-btn');
+  const webhookStatus = document.getElementById('webhook-status');
+  const messageInput = document.getElementById('message-input');
+  const previewBox = document.getElementById('preview-box');
+  const pcSendBtn = document.getElementById('pc-send-btn');
+  const mobileSendBtn = document.getElementById('mobile-send-btn');
+  const sendStatus = document.getElementById('send-status');
+
+  function loadWebhook() {
+    return localStorage.getItem(WEBHOOK_KEY) || '';
+  }
+
+  function setWebhookStatus(text, tone) {
+    webhookStatus.textContent = text;
+    webhookStatus.className = 'status-line' + (tone ? ` ${tone}` : ' dim');
+  }
+
+  const saved = loadWebhook();
+  if (saved) {
+    webhookInput.value = saved;
+    setWebhookStatus('Webhook saved.', 'good');
+  }
+
+  webhookToggleBtn.addEventListener('click', () => {
+    const showing = webhookInput.type === 'text';
+    webhookInput.type = showing ? 'password' : 'text';
+    webhookToggleBtn.textContent = showing ? 'Show' : 'Hide';
+  });
+
+  webhookSaveBtn.addEventListener('click', () => {
+    const url = webhookInput.value.trim();
+    if (!url) {
+      setWebhookStatus('Paste a webhook URL first.', 'bad');
+      return;
+    }
+    if (!/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(url)) {
+      setWebhookStatus('That doesn’t look like a Discord webhook URL.', 'bad');
+      return;
+    }
+    localStorage.setItem(WEBHOOK_KEY, url);
+    setWebhookStatus('Webhook saved.', 'good');
+  });
+
+  webhookClearBtn.addEventListener('click', () => {
+    localStorage.removeItem(WEBHOOK_KEY);
+    webhookInput.value = '';
+    setWebhookStatus('Webhook cleared.', 'dim');
+  });
+
+  function wrapPc(text) {
+    return '# `' + text + '`';
+  }
+  function wrapMobile(text) {
+    return '```' + text + '```';
+  }
+
+  function updatePreview() {
+    const text = messageInput.value;
+    if (!text) {
+      previewBox.textContent = '—';
+      return;
+    }
+    previewBox.textContent = wrapPc(text) + '\n\n' + wrapMobile(text);
+  }
+  messageInput.addEventListener('input', updatePreview);
+  updatePreview();
+
+  function flashButton(btn, text, tone) {
+    const original = btn.dataset.label || btn.textContent;
+    btn.dataset.label = original;
+    btn.textContent = text;
+    btn.classList.remove('good-flash', 'bad-flash');
+    if (tone) btn.classList.add(tone === 'good' ? 'good-flash' : 'bad-flash');
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.classList.remove('good-flash', 'bad-flash');
+    }, 1800);
+  }
+
+  async function sendToDiscord(btn, wrap) {
+    const text = messageInput.value.trim();
+    if (!text) {
+      sendStatus.textContent = 'Nothing to send.';
+      sendStatus.className = 'status-line bad';
+      return;
+    }
+    const webhookUrl = loadWebhook();
+    if (!webhookUrl) {
+      sendStatus.textContent = 'Save a webhook URL first.';
+      sendStatus.className = 'status-line bad';
+      return;
+    }
+
+    const content = wrap(text);
+    if (content.length > 2000) {
+      sendStatus.textContent = 'Message is too long for Discord once wrapped (2000 char limit).';
+      sendStatus.className = 'status-line bad';
+      return;
+    }
+
+    pcSendBtn.disabled = true;
+    mobileSendBtn.disabled = true;
+    sendStatus.textContent = 'Sending…';
+    sendStatus.className = 'status-line dim';
+
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) throw new Error('Discord returned ' + res.status);
+      flashButton(btn, 'Sent!', 'good');
+      sendStatus.textContent = 'Sent.';
+      sendStatus.className = 'status-line good';
+      messageInput.value = '';
+      updatePreview();
+    } catch (err) {
+      flashButton(btn, 'Failed', 'bad');
+      sendStatus.textContent = 'Failed to send — check the webhook URL and your connection.';
+      sendStatus.className = 'status-line bad';
+    } finally {
+      pcSendBtn.disabled = false;
+      mobileSendBtn.disabled = false;
+    }
+  }
+
+  pcSendBtn.addEventListener('click', () => sendToDiscord(pcSendBtn, wrapPc));
+  mobileSendBtn.addEventListener('click', () => sendToDiscord(mobileSendBtn, wrapMobile));
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('sw.js', { updateViaCache: 'none' })
+        .then(reg => reg.update())
+        .catch(() => {});
+    });
+
+    let refreshedOnce = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshedOnce) return;
+      refreshedOnce = true;
+      window.location.reload();
+    });
+  }
+</script>
