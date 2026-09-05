@@ -99,18 +99,52 @@
   .status-line.bad { color: var(--bad); }
   .status-line.dim { color: var(--text-faint); }
 
-  .preview-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.03em; }
-  .preview-box {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  .duration-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .duration-btn {
+    flex: none;
+    font: inherit;
     font-size: 13px;
+    font-weight: 700;
     color: var(--text-dim);
     background: var(--panel-2);
     border: 1px solid var(--line);
     border-radius: 10px;
+    padding: 9px;
+    cursor: pointer;
+  }
+  .duration-btn:hover { border-color: var(--accent); }
+  .duration-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+  .selfdestruct-note { font-size: 12px; color: var(--text-faint); line-height: 1.5; }
+
+  .pending-list { display: flex; flex-direction: column; gap: 8px; }
+  .pending-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
     padding: 8px 10px;
-    white-space: pre-wrap;
-    word-break: break-word;
-    min-height: 20px;
+  }
+  .pending-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pending-countdown {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .pending-cancel {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 12px;
   }
 </style>
 
@@ -136,13 +170,26 @@
   <div class="panel">
     <div class="label">Message</div>
     <textarea id="message-input" placeholder="Type or paste your message&hellip;"></textarea>
-    <div class="preview-label">Preview</div>
-    <div class="preview-box" id="preview-box">&mdash;</div>
+    <div class="label">Self-destruct after</div>
+    <div class="duration-grid" id="duration-grid">
+      <button type="button" class="duration-btn" data-seconds="30">30s</button>
+      <button type="button" class="duration-btn" data-seconds="60">1m</button>
+      <button type="button" class="duration-btn" data-seconds="300">5m</button>
+      <button type="button" class="duration-btn" data-seconds="600">10m</button>
+      <button type="button" class="duration-btn" data-seconds="1800">30m</button>
+      <button type="button" class="duration-btn" data-seconds="3600">1h</button>
+    </div>
+    <div class="selfdestruct-note" id="selfdestruct-note" hidden>Only fires while this app is open — closing it just delays the delete until you reopen the app. Tap the selected duration again to turn it off.</div>
     <div class="row">
       <button id="pc-send-btn" type="button">PC Send</button>
       <button id="mobile-send-btn" type="button">Mobile Send</button>
     </div>
     <div class="status-line" id="send-status"></div>
+  </div>
+
+  <div class="panel" id="pending-panel" hidden>
+    <div class="label">Self-destructing</div>
+    <div class="pending-list" id="pending-list"></div>
   </div>
 </div>
 
@@ -155,10 +202,14 @@
   const webhookClearBtn = document.getElementById('webhook-clear-btn');
   const webhookStatus = document.getElementById('webhook-status');
   const messageInput = document.getElementById('message-input');
-  const previewBox = document.getElementById('preview-box');
   const pcSendBtn = document.getElementById('pc-send-btn');
   const mobileSendBtn = document.getElementById('mobile-send-btn');
   const sendStatus = document.getElementById('send-status');
+  const durationGrid = document.getElementById('duration-grid');
+  const selfdestructNote = document.getElementById('selfdestruct-note');
+  let selectedSeconds = null;
+  const pendingPanel = document.getElementById('pending-panel');
+  const pendingList = document.getElementById('pending-list');
 
   function loadWebhook() {
     return localStorage.getItem(WEBHOOK_KEY) || '';
@@ -201,23 +252,119 @@
     setWebhookStatus('Webhook cleared.', 'dim');
   });
 
+  durationGrid.querySelectorAll('.duration-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const seconds = Number(btn.dataset.seconds);
+      const turningOff = selectedSeconds === seconds;
+      selectedSeconds = turningOff ? null : seconds;
+      durationGrid.querySelectorAll('.duration-btn').forEach((b) => {
+        b.classList.toggle('active', !turningOff && b === btn);
+      });
+      selfdestructNote.hidden = selectedSeconds === null;
+    });
+  });
+
+  // --- Self-destruct: schedule a webhook message for deletion. Only
+  // fires while this tab is open; a "deleteAt" timestamp (rather than a
+  // fixed setTimeout survived across reloads) lets it catch up on late
+  // opens instead of losing the delete entirely. ---
+  const PENDING_KEY = 'discord-quick-send-pending';
+  let pending = [];
+  const pendingTimers = new Map();
+
+  function loadPending() {
+    try {
+      return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+  function savePending() {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  }
+
+  async function deleteDiscordMessage(webhookUrl, messageId) {
+    const base = webhookUrl.split('?')[0];
+    const res = await fetch(`${base}/messages/${messageId}`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 404) throw new Error('Discord returned ' + res.status);
+  }
+
+  function clearTimer(id) {
+    const t = pendingTimers.get(id);
+    if (t) { clearTimeout(t); pendingTimers.delete(id); }
+  }
+
+  async function fireDelete(entry) {
+    try {
+      await deleteDiscordMessage(entry.webhookUrl, entry.messageId);
+    } catch (e) {
+      // Leave it in the list so a later reopen retries.
+      return;
+    }
+    pending = pending.filter((p) => p.id !== entry.id);
+    savePending();
+    renderPending();
+  }
+
+  function scheduleEntry(entry) {
+    clearTimer(entry.id);
+    const delay = Math.max(0, entry.deleteAt - Date.now());
+    const t = setTimeout(() => fireDelete(entry), delay);
+    pendingTimers.set(entry.id, t);
+  }
+
+  function renderPending() {
+    pendingPanel.hidden = pending.length === 0;
+    pendingList.innerHTML = '';
+    pending.forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'pending-row';
+
+      const textEl = document.createElement('div');
+      textEl.className = 'pending-text';
+      textEl.textContent = entry.text;
+
+      const countdownEl = document.createElement('div');
+      countdownEl.className = 'pending-countdown';
+      const secsLeft = Math.max(0, Math.round((entry.deleteAt - Date.now()) / 1000));
+      countdownEl.textContent = secsLeft >= 60 ? Math.ceil(secsLeft / 60) + 'm' : secsLeft + 's';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'pending-cancel';
+      cancelBtn.textContent = 'Keep it';
+      cancelBtn.addEventListener('click', () => {
+        clearTimer(entry.id);
+        pending = pending.filter((p) => p.id !== entry.id);
+        savePending();
+        renderPending();
+      });
+
+      row.appendChild(textEl);
+      row.appendChild(countdownEl);
+      row.appendChild(cancelBtn);
+      pendingList.appendChild(row);
+    });
+  }
+
+  function initPending() {
+    pending = loadPending();
+    const now = Date.now();
+    pending.forEach((entry) => {
+      if (entry.deleteAt <= now) fireDelete(entry);
+      else scheduleEntry(entry);
+    });
+    renderPending();
+  }
+
+  setInterval(() => { if (pending.length) renderPending(); }, 1000);
+
   function wrapPc(text) {
     return '# `' + text + '`';
   }
   function wrapMobile(text) {
     return '```' + text + '```';
   }
-
-  function updatePreview() {
-    const text = messageInput.value;
-    if (!text) {
-      previewBox.textContent = '—';
-      return;
-    }
-    previewBox.textContent = wrapPc(text) + '\n\n' + wrapMobile(text);
-  }
-  messageInput.addEventListener('input', updatePreview);
-  updatePreview();
 
   function flashButton(btn, text, tone) {
     const original = btn.dataset.label || btn.textContent;
@@ -257,18 +404,37 @@
     sendStatus.textContent = 'Sending…';
     sendStatus.className = 'status-line dim';
 
+    const selfDestruct = selectedSeconds !== null;
+    const sendUrl = selfDestruct ? webhookUrl + '?wait=true' : webhookUrl;
+
     try {
-      const res = await fetch(webhookUrl, {
+      const res = await fetch(sendUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       });
       if (!res.ok) throw new Error('Discord returned ' + res.status);
+
+      if (selfDestruct) {
+        const sent = await res.json();
+        const seconds = selectedSeconds;
+        const entry = {
+          id: (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random()}`,
+          webhookUrl,
+          messageId: sent.id,
+          text,
+          deleteAt: Date.now() + seconds * 1000,
+        };
+        pending.push(entry);
+        savePending();
+        scheduleEntry(entry);
+        renderPending();
+      }
+
       flashButton(btn, 'Sent!', 'good');
-      sendStatus.textContent = 'Sent.';
+      sendStatus.textContent = selfDestruct ? 'Sent — will self-destruct.' : 'Sent.';
       sendStatus.className = 'status-line good';
       messageInput.value = '';
-      updatePreview();
     } catch (err) {
       flashButton(btn, 'Failed', 'bad');
       sendStatus.textContent = 'Failed to send — check the webhook URL and your connection.';
@@ -281,6 +447,8 @@
 
   pcSendBtn.addEventListener('click', () => sendToDiscord(pcSendBtn, wrapPc));
   mobileSendBtn.addEventListener('click', () => sendToDiscord(mobileSendBtn, wrapMobile));
+
+  initPending();
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
