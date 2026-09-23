@@ -1,4 +1,4 @@
-const CACHE = 'discord-quick-send-v3';
+const CACHE = 'discord-quick-send-v4';
 const ASSETS = [
   './',
   './index.html',
