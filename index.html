@@ -176,6 +176,11 @@
   </div>
 
   <div class="panel">
+    <div class="row">
+      <button id="pc-send-btn" type="button">PC Send</button>
+      <button id="mobile-send-btn" type="button">Mobile Send</button>
+    </div>
+    <div class="status-line" id="send-status"></div>
     <div class="label">Message</div>
     <textarea id="message-input" placeholder="Type or paste your message&hellip;"></textarea>
     <div class="label">Self-destruct after</div>
@@ -188,11 +193,6 @@
       <button type="button" class="duration-btn" data-seconds="600">10m</button>
     </div>
     <div class="selfdestruct-note" id="selfdestruct-note">Only fires while this app is open — closing it just delays the delete until you reopen the app. Tap the selected duration again to turn it off.</div>
-    <div class="row">
-      <button id="pc-send-btn" type="button">PC Send</button>
-      <button id="mobile-send-btn" type="button">Mobile Send</button>
-    </div>
-    <div class="status-line" id="send-status"></div>
   </div>
 
   <div class="panel" id="pending-panel" hidden>
