@@ -185,12 +185,9 @@
     <textarea id="message-input" placeholder="Type or paste your message&hellip;"></textarea>
     <div class="label">Self-destruct after</div>
     <div class="duration-grid" id="duration-grid">
-      <button type="button" class="duration-btn active" data-seconds="5">5s</button>
-      <button type="button" class="duration-btn" data-seconds="10">10s</button>
+      <button type="button" class="duration-btn active" data-seconds="15">15s</button>
       <button type="button" class="duration-btn" data-seconds="30">30s</button>
       <button type="button" class="duration-btn" data-seconds="60">1m</button>
-      <button type="button" class="duration-btn" data-seconds="300">5m</button>
-      <button type="button" class="duration-btn" data-seconds="600">10m</button>
     </div>
     <div class="selfdestruct-note" id="selfdestruct-note">Only fires while this app is open — closing it just delays the delete until you reopen the app. Tap the selected duration again to turn it off.</div>
   </div>
@@ -215,7 +212,7 @@
   const sendStatus = document.getElementById('send-status');
   const durationGrid = document.getElementById('duration-grid');
   const selfdestructNote = document.getElementById('selfdestruct-note');
-  let selectedSeconds = 5;
+  let selectedSeconds = 15;
   const pendingPanel = document.getElementById('pending-panel');
   const pendingList = document.getElementById('pending-list');
 
