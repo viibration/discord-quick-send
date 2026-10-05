@@ -159,7 +159,7 @@
 <div class="wrap">
   <div>
     <h1>Discord Quick Send</h1>
-    <p class="subtitle">Paste a message once, send it straight to your Discord webhook &mdash; wrapped the same way your PC/Mobile clipboard sync used.</p>
+    <p class="subtitle">Paste a message once, send it straight to your Discord webhook. Press Enter to send (Shift+Enter for a new line).</p>
   </div>
 
   <div class="panel">
@@ -177,8 +177,7 @@
 
   <div class="panel">
     <div class="row">
-      <button id="pc-send-btn" type="button">PC Send</button>
-      <button id="mobile-send-btn" type="button">Mobile Send</button>
+      <button id="send-btn" type="button">Send</button>
     </div>
     <div class="status-line" id="send-status"></div>
     <div class="label">Message</div>
@@ -207,8 +206,7 @@
   const webhookClearBtn = document.getElementById('webhook-clear-btn');
   const webhookStatus = document.getElementById('webhook-status');
   const messageInput = document.getElementById('message-input');
-  const pcSendBtn = document.getElementById('pc-send-btn');
-  const mobileSendBtn = document.getElementById('mobile-send-btn');
+  const sendBtn = document.getElementById('send-btn');
   const sendStatus = document.getElementById('send-status');
   const durationGrid = document.getElementById('duration-grid');
   const selfdestructNote = document.getElementById('selfdestruct-note');
@@ -394,9 +392,6 @@
   function wrapPc(text) {
     return '# `' + text + '`';
   }
-  function wrapMobile(text) {
-    return '```' + text + '```';
-  }
 
   function flashButton(btn, text, tone) {
     const original = btn.dataset.label || btn.textContent;
@@ -431,8 +426,7 @@
       return;
     }
 
-    pcSendBtn.disabled = true;
-    mobileSendBtn.disabled = true;
+    sendBtn.disabled = true;
     sendStatus.textContent = 'Sending…';
     sendStatus.className = 'status-line dim';
 
@@ -472,13 +466,19 @@
       sendStatus.textContent = 'Failed to send — check the webhook URL and your connection.';
       sendStatus.className = 'status-line bad';
     } finally {
-      pcSendBtn.disabled = false;
-      mobileSendBtn.disabled = false;
+      sendBtn.disabled = false;
     }
   }
 
-  pcSendBtn.addEventListener('click', () => sendToDiscord(pcSendBtn, wrapPc));
-  mobileSendBtn.addEventListener('click', () => sendToDiscord(mobileSendBtn, wrapMobile));
+  sendBtn.addEventListener('click', () => sendToDiscord(sendBtn, wrapPc));
+  // Enter sends; Shift+Enter still inserts a newline. Skipped mid-IME
+  // composition so confirming a Thai/CJK candidate doesn't fire a send.
+  messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !sendBtn.disabled) {
+      e.preventDefault();
+      sendToDiscord(sendBtn, wrapPc);
+    }
+  });
 
   initPending();
 
